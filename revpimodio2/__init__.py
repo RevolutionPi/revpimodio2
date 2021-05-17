@@ -16,13 +16,13 @@ __all__ = [
     "RevPiModIO", "RevPiModIODriver", "RevPiModIOSelected", "run_plc",
     "RevPiNetIO", "RevPiNetIODriver", "RevPiNetIOSelected",
     "Cycletools", "EventCallback",
-    "AIO", "COMPACT", "DI", "DO", "DIO",
+    "AIO", "COMPACT", "DI", "DO", "DIO", "FLAT",
 ]
 __author__ = "Sven Sager <akira@revpimodio.org>"
 __copyright__ = "Copyright (C) 2020 Sven Sager"
 __license__ = "LGPLv3"
 __name__ = "revpimodio2"
-__version__ = "2.5.6"
+__version__ = "2.5.7"
 
 # Global package values
 OFF = 0
@@ -96,7 +96,7 @@ def consttostr(value) -> str:
 
 
 # Benötigte Klassen importieren
-from .pictory import AIO, COMPACT, DI, DO, DIO
+from .pictory import AIO, COMPACT, DI, DO, DIO, FLAT
 from .helper import Cycletools, EventCallback
 from .modio import RevPiModIO, RevPiModIODriver, RevPiModIOSelected, run_plc
 from .netio import RevPiNetIO, RevPiNetIODriver, RevPiNetIOSelected

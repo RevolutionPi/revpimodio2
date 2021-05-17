@@ -125,7 +125,7 @@ class Device(object):
     """
 
     __slots__ = "__my_io_list", "_ba_devdata", "_ba_datacp", \
-                "_dict_events", "_filelock", "_length", "_modio", "_name", \
+                "_dict_events", "_filelock", "_modio", "_name", \
                 "_offset", "_position", "_producttype", "_selfupdate", \
                 "_slc_devoff", "_slc_inp", "_slc_inpoff", "_slc_mem", \
                 "_slc_memoff", "_slc_out", "_slc_outoff", "_shared_procimg", \
@@ -143,9 +143,10 @@ class Device(object):
         """
         self._modio = parentmodio
 
+        self._ba_devdata = bytearray()
+        self._ba_datacp = bytearray()  # Copy for event detection
         self._dict_events = {}
         self._filelock = Lock()
-        self._length = 0
         self.__my_io_list = []
         self._selfupdate = False
         self._shared_procimg = parentmodio._shared_procimg
@@ -173,7 +174,7 @@ class Device(object):
         )
 
         # SLCs mit offset berechnen
-        self._slc_devoff = slice(self._offset, self._offset + self._length)
+        self._slc_devoff = slice(self._offset, self._offset + self.length)
         self._slc_inpoff = slice(
             self._slc_inp.start + self._offset,
             self._slc_inp.stop + self._offset
@@ -186,10 +187,6 @@ class Device(object):
             self._slc_mem.start + self._offset,
             self._slc_mem.stop + self._offset
         )
-
-        # Neues bytearray und Kopie für mainloop anlegen
-        self._ba_devdata = bytearray(self._length)
-        self._ba_datacp = bytearray()
 
         # Alle restlichen attribute an Klasse anhängen
         self.bmk = dict_device.get("bmk", "")
@@ -268,7 +265,7 @@ class Device(object):
 
         :return: <class 'int'>
         """
-        return self._length
+        return len(self._ba_devdata)
 
     def __str__(self):
         """
@@ -349,14 +346,13 @@ class Device(object):
             # IO registrieren
             self._modio.io._private_register_new_io_object(io_new)
 
-            self._length += io_new._length
-
             # Kleinste und größte Speicheradresse ermitteln
             if io_new._slc_address.start < int_min:
                 int_min = io_new._slc_address.start
             if io_new._slc_address.stop > int_max:
                 int_max = io_new._slc_address.stop
 
+        self._ba_devdata += bytearray(int_max - int_min)
         return slice(int_min, int_max)
 
     def _devconfigure(self):
@@ -586,14 +582,14 @@ class Core(Base):
         self._slc_errorcnt = None
         self._slc_errorlimit1 = None
         self._slc_errorlimit2 = None
-        if self._length == 9:
+        if self.length == 9:
             #  9 Byte = Core1.1
             self._slc_cycle = slice(1, 2)
             self._slc_errorcnt = slice(2, 4)
             self._slc_led = slice(4, 5)
             self._slc_errorlimit1 = slice(5, 7)
             self._slc_errorlimit2 = slice(7, 9)
-        elif self._length == 11:
+        elif self.length == 11:
             # 11 Byte = Core1.2 / Connect
             self._slc_cycle = slice(1, 2)
             self._slc_errorcnt = slice(2, 4)
@@ -1158,16 +1154,17 @@ class Flat(Base):
     """
 
     __slots__ = "_slc_temperature", "_slc_frequency", "_slc_led", \
+                "_slc_switch", "_slc_dout", \
                 "a1green", "a1red", "a2green", "a2red", \
                 "a3green", "a3red", "a4green", "a4red", \
-                "a5green", "a5red", "wd"
+                "a5green", "a5red", "relais", "switch", "wd"
 
     def __setattr__(self, key, value):
         """Verhindert Ueberschreibung der LEDs."""
         if hasattr(self, key) and key in (
                 "a1green", "a1red", "a2green", "a2red",
                 "a3green", "a3red", "a4green", "a4red",
-                "a5green", "a5red", "wd"):
+                "a5green", "a5red", "relais", "switch", "wd"):
             raise AttributeError(
                 "direct assignment is not supported - use .value Attribute"
             )
@@ -1178,9 +1175,11 @@ class Flat(Base):
         """Core-Klasse vorbereiten."""
 
         # Statische IO Verknüpfungen des Compacts
-        self._slc_led = slice(6, 8)
+        self._slc_led = slice(7, 9)
         self._slc_temperature = slice(4, 5)
         self._slc_frequency = slice(5, 6)
+        self._slc_switch = slice(6, 7)
+        self._slc_dout = slice(11, 12)
 
         # Exportflags prüfen (Byte oder Bit)
         lst_led = self._modio.io[self._slc_devoff][self._slc_led.start]
@@ -1252,7 +1251,21 @@ class Flat(Base):
             exp_a5red, None, "LED_A5_RED", "9"
         ], OUT, "little", False)
 
-        # todo: Add internal switch and relay, like Connect
+        # Real IO for switch
+        lst_io = self._modio.io[self._slc_devoff][self._slc_switch.start]
+        exp_io = lst_io[0].export
+        self.switch = IOBase(self, [
+            "flat.switch", 0, 1, self._slc_switch.start,
+            exp_io, None, "Flat_Switch", "0"
+        ], INP, "little", False)
+
+        # Real IO for relais
+        lst_io = self._modio.io[self._slc_devoff][self._slc_dout.start]
+        exp_io = lst_io[0].export
+        self.relais = IOBase(self, [
+            "flat.relais", 0, 1, self._slc_dout.start,
+            exp_io, None, "Flat_Relais", "0"
+        ], OUT, "little", False)
 
         # Software watchdog einrichten
         self.wd = IOBase(self, [
