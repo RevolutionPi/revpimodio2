@@ -1,3 +1,12 @@
+revpimodio2 (2.5.7-1+revpi10) unstable; urgency=medium
+
+  [ Sven Sager ]
+  * Flat: Switch and Relais as real io of core class, added MEMs to pictory.py
+  * Bugfix: Calculate correct lengths despite IO gaps in incorrect piCtory file
+  * Next release
+
+ -- Philipp Rosenberger <p.rosenberger@kunbus.com>  Mon, 17 May 2021 08:42:27 +0200
+
 revpimodio2 (2.5.6-1+revpi10) unstable; urgency=medium
 
   * Import RevPiModIO 2 (2.5.6)
