@@ -176,7 +176,7 @@ class IOList(object):
                 if type(oldio) == StructIO:
                     # Hier gibt es schon einen neuen IO
                     if oldio._bitshift:
-                        if io._bitshift == oldio._bitshift:
+                        if io._bitshift == oldio._bitshift and io._slc_address == oldio._slc_address:
                             raise MemoryError(
                                 "bit {0} already assigned to '{1}'".format(
                                     io._bitaddress, oldio._name
@@ -648,7 +648,8 @@ class IOBase(object):
         """
         self.__reg_xevent(func, delay, edge, as_thread, True, prefire)
 
-    def reg_timerevent(self, func, delay, edge=BOTH, as_thread=False):
+    def reg_timerevent(
+            self, func, delay, edge=BOTH, as_thread=False, prefire=False):
         """
         Registriert fuer IO einen Timer, welcher nach delay func ausfuehrt.
 
@@ -666,8 +667,9 @@ class IOBase(object):
         :param delay: Verzoegerung in ms zum Ausloesen - auch bei Wertaenderung
         :param edge: Ausfuehren bei RISING, FALLING or BOTH Wertaenderung
         :param as_thread: Bei True, Funktion als EventCallback-Thread ausfuehren
+        :param prefire: Ausloesen mit aktuellem Wert, wenn mainloop startet
         """
-        self.__reg_xevent(func, delay, edge, as_thread, False, False)
+        self.__reg_xevent(func, delay, edge, as_thread, False, prefire)
 
     def set_value(self, value) -> None:
         """

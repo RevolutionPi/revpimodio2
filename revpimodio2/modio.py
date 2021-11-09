@@ -18,6 +18,8 @@ __author__ = "Sven Sager"
 __copyright__ = "Copyright (C) 2020 Sven Sager"
 __license__ = "LGPLv3"
 
+from .pictory import ProductType
+
 
 class RevPiModIO(object):
     """
@@ -34,6 +36,7 @@ class RevPiModIO(object):
     __slots__ = "__cleanupfunc", "_autorefresh", "_buffedwrite", "_exit_level", \
                 "_configrsc", "_shared_procimg", "_exit", "_imgwriter", "_ioerror", \
                 "_length", "_looprunning", "_lst_devselect", "_lst_refresh", \
+                "_lst_shared", \
                 "_maxioerrors", "_myfh", "_myfh_lck", "_monitoring", "_procimg", \
                 "_simulator", "_syncoutputs", "_th_mainloop", "_waitexit", \
                 "core", "app", "device", "exitsignal", "io", "summary", "_debug", \
@@ -96,6 +99,7 @@ class RevPiModIO(object):
         self._looprunning = False
         self._lst_devselect = []
         self._lst_refresh = []
+        self._lst_shared = []
         self._maxioerrors = 0
         self._myfh = None
         self._myfh_lck = Lock()
@@ -225,7 +229,7 @@ class RevPiModIO(object):
 
         # Devices initialisieren
         err_names = []
-        for device in sorted(lst_devices, key=lambda x: x["position"]):
+        for device in sorted(lst_devices, key=lambda x: x["offset"]):
 
             # VDev alter piCtory Versionen auf Kunbus-Standard ändern
             if device["position"] == "adap.":
@@ -236,25 +240,25 @@ class RevPiModIO(object):
             if device["type"] == "BASE":
                 # Basedevices
                 pt = int(device["productType"])
-                if pt == 95:
+                if pt == ProductType.REVPI_CORE:
                     # RevPi Core
                     dev_new = devicemodule.Core(
                         self, device, simulator=self._simulator
                     )
                     self.core = dev_new
-                elif pt == 105:
+                elif pt == ProductType.REVPI_CONNECT:
                     # RevPi Connect
                     dev_new = devicemodule.Connect(
                         self, device, simulator=self._simulator
                     )
                     self.core = dev_new
-                elif pt == 104:
+                elif pt == ProductType.REVPI_COMPACT:
                     # RevPi Compact
                     dev_new = devicemodule.Compact(
                         self, device, simulator=self._simulator
                     )
                     self.core = dev_new
-                elif pt == 135:
+                elif pt == ProductType.REVPI_FLAT:
                     # RevPi Flat
                     dev_new = devicemodule.Flat(
                         self, device, simulator=self._simulator
@@ -268,7 +272,7 @@ class RevPiModIO(object):
             elif device["type"] == "LEFT_RIGHT":
                 # IOs
                 pt = int(device["productType"])
-                if pt == 96 or pt == 97 or pt == 98:
+                if pt == ProductType.DIO or pt == ProductType.DI or pt == ProductType.DO:
                     # DIO / DI / DO
                     dev_new = devicemodule.DioModule(
                         self, device, simulator=self._simulator
@@ -415,6 +419,19 @@ class RevPiModIO(object):
                             "replace_io_file: could not convert '{0}' "
                             "defaultvalue '{1}' to boolean"
                             "".format(io, creplaceio[io]["defaultvalue"])
+                        )
+                elif dict_replace["frm"].find("s") >= 0:
+                    buff = bytearray()
+                    try:
+                        dv_array = creplaceio[io].get("defaultvalue").split(" ")
+                        for byte_int in dv_array:
+                            buff.append(int(byte_int))
+                        dict_replace["defaultvalue"] = bytes(buff)
+                    except Exception as e:
+                        raise ValueError(
+                            "replace_io_file: could not convert '{0}' "
+                            "defaultvalue to bytes | {1}"
+                            "".format(io, e)
                         )
                 else:
                     try:
@@ -750,10 +767,10 @@ class RevPiModIO(object):
         # Zykluszeit übernehmen
         old_cycletime = self._imgwriter.refresh
         if not cycletime == self._imgwriter.refresh:
+            # Set new cycle time and wait one imgwriter cycle to sync fist cycle
             self._imgwriter.refresh = cycletime
-
-            # Zeitänderung in _imgwriter neuladen
             self._imgwriter.newdata.clear()
+            self._imgwriter.newdata.wait(self._imgwriter._refresh)
 
         # Benutzerevent
         self.exitsignal.clear()
@@ -764,6 +781,7 @@ class RevPiModIO(object):
         cycleinfo = helpermodule.Cycletools(self._imgwriter.refresh, self)
         e = None  # Exception
         ec = None  # Return value of cycle_function
+        self._imgwriter.newdata.clear()
         try:
             while ec is None and not cycleinfo.last:
                 # Auf neue Daten warten und nur ausführen wenn set()
@@ -876,7 +894,12 @@ class RevPiModIO(object):
                     cp[io.name]["bit"] = str(io._bitaddress)
                 if io._byteorder != "little":
                     cp[io.name]["byteorder"] = io._byteorder
-                if io.defaultvalue != 0:
+                if type(io.defaultvalue) is bytes:
+                    if any(io.defaultvalue):
+                        # Convert each byte to an integer
+                        cp[io.name]["defaultvalue"] = \
+                            " ".join(map(str, io.defaultvalue))
+                elif io.defaultvalue != 0:
                     cp[io.name]["defaultvalue"] = str(io.defaultvalue)
                 if io.bmk != "":
                     cp[io.name]["bmk"] = io.bmk

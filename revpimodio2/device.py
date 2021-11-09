@@ -1,12 +1,14 @@
 # -*- coding: utf-8 -*-
 """Modul fuer die Verwaltung der Devices."""
+__author__ = "Sven Sager"
+__copyright__ = "Copyright (C) 2021 Sven Sager"
+__license__ = "LGPLv3"
+
+import warnings
 from threading import Event, Lock, Thread
 
 from .helper import ProcimgWriter
-
-__author__ = "Sven Sager"
-__copyright__ = "Copyright (C) 2020 Sven Sager"
-__license__ = "LGPLv3"
+from .pictory import ProductType
 
 
 class DeviceList(object):
@@ -149,8 +151,9 @@ class Device(object):
         self._filelock = Lock()
         self.__my_io_list = []
         self._selfupdate = False
-        self._shared_procimg = parentmodio._shared_procimg
+        self._shared_procimg = False
         self._shared_write = []
+        self.shared_procimg(parentmodio._shared_procimg)  # Set with register
 
         # Wertzuweisung aus dict_device
         self._name = dict_device.get("name")
@@ -158,6 +161,15 @@ class Device(object):
         self._position = int(dict_device.get("position"))
         self._producttype = int(dict_device.get("productType"))
 
+        # Offset-Check for broken piCtory configuration
+        if self._offset < parentmodio.length:
+            warnings.warn(
+                "Device offset ERROR in piCtory configuration! Offset of '{0}' "
+                "must be {1} but is {2} - Overlapping devices overwrite the "
+                "same memory, which has unpredictable effects!!!"
+                "".format(self._name, parentmodio.length, self._offset),
+                Warning
+            )
         # IOM-Objekte erstellen und Adressen in SLCs speichern
         if simulator:
             self._slc_inp = self._buildio(
@@ -340,11 +352,18 @@ class Device(object):
                     iotype,
                     "little",
                     # Bei AIO (103) signed auf True setzen
-                    self._producttype == 103
+                    self._producttype == ProductType.AIO
                 )
 
-            # IO registrieren
-            self._modio.io._private_register_new_io_object(io_new)
+            if io_new.address < self._modio.length:
+                warnings.warn(
+                    "IO {0} is not in the device offset and will be ignored"
+                    "".format(io_new.name),
+                    Warning
+                )
+            else:
+                # IO registrieren
+                self._modio.io._private_register_new_io_object(io_new)
 
             # Kleinste und größte Speicheradresse ermitteln
             if io_new._slc_address.start < int_min:
@@ -504,14 +523,15 @@ class Device(object):
         """
         Activate sharing of process image just for this device.
 
-        WARNING: All outputs will set immediately in process image on value
-        change. That is also inside the cycle loop!
-
         :param activate: Set True to activate process image sharing
         """
         with self._filelock:
             self._shared_write.clear()
         self._shared_procimg = True if activate else False
+        if self._shared_procimg and self not in self._modio._lst_shared:
+            self._modio._lst_shared.append(self)
+        elif not self._shared_procimg and self in self._modio._lst_shared:
+            self._modio._lst_shared.remove(self)
 
     def syncoutputs(self) -> bool:
         """
