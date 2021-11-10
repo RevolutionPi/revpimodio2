@@ -1,3 +1,27 @@
+revpimodio2 (2.5.9-1+revpi10) unstable; urgency=medium
+
+  [ Nicolai Buchwitz ]
+  * introduce ProductType enum and use it
+
+  [ Sven Sager ]
+  * Added MIO memory value mappings
+  * The replace_io file can handle default values of type byte (frm="*s") now.
+  * Check device offsets in piCtory file and ignore IOs with wrong offsets
+  * Bugfix for offset check in piCtory file
+  * Bugfix on handle default values of type byte (frm="*s") in export_file
+  * Bugfix with shared process image in cycle loop
+
+  [ Nicolai Buchwitz ]
+  * fix: scope bit address with slc_address
+
+  [ Sven Sager ]
+  * Make the cycle more precise
+  * Warn the user faster, if the cycle time is exhausted
+  * Add `prefire` to reg_timerevent function
+  * Sync the first cycle with imgwriter after calling `.cycleloop`
+
+ -- Frank Pavlic <f.pavlic@kunbus.com>  Wed, 10 Nov 2021 06:06:46 +0100
+
 revpimodio2 (2.5.7-1+revpi10) unstable; urgency=medium
 
   [ Sven Sager ]
