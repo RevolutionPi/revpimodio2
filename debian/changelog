@@ -1,3 +1,12 @@
+revpimodio2 (2.5.10-1+revpi10) unstable; urgency=medium
+
+  [ Sven Sager ]
+  * Configure replaced ios from file before starting autorefresh
+  * Improve troubleshooting details on equal device names in piCtory.
+  * Add position numbers in warning text of all devices with equal name in piCtory
+
+ -- Nicolai Buchwitz <n.buchwitz@kunbus.com>  Fri, 22 Apr 2022 13:21:30 +0200
+
 revpimodio2 (2.5.9-1+revpi10) unstable; urgency=medium
 
   [ Nicolai Buchwitz ]
