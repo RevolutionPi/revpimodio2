@@ -130,7 +130,6 @@ class RevPiModIO(object):
         # Nur Konfigurieren, wenn nicht vererbt
         if type(self) == RevPiModIO:
             self._configure(self.get_jconfigrsc())
-            self._configure_replace_io(self._get_cpreplaceio())
 
     def __del__(self):
         """Zerstoert alle Klassen um aufzuraeumen."""
@@ -228,7 +227,7 @@ class RevPiModIO(object):
         self.io = IOList()
 
         # Devices initialisieren
-        err_names = []
+        err_names_check = {}
         for device in sorted(lst_devices, key=lambda x: x["offset"]):
 
             # VDev alter piCtory Versionen auf Kunbus-Standard ändern
@@ -306,25 +305,28 @@ class RevPiModIO(object):
 
             if dev_new is not None:
                 # Offset prüfen, muss mit Länge übereinstimmen
-                if self._length < dev_new._offset:
-                    self._length = dev_new._offset
+                if self._length < dev_new.offset:
+                    self._length = dev_new.offset
 
                 self._length += dev_new.length
 
-                # Auf doppelte Namen prüfen, da piCtory dies zulässt
-                if hasattr(self.device, dev_new._name):
-                    err_names.append(dev_new._name)
+                # Build dict with device name and positions and check later
+                if dev_new.name not in err_names_check:
+                    err_names_check[dev_new.name] = []
+                err_names_check[dev_new.name].append(str(dev_new.position))
 
                 # DeviceList für direkten Zugriff aufbauen
-                setattr(self.device, dev_new._name, dev_new)
+                setattr(self.device, dev_new.name, dev_new)
 
-        # Namenszugriff zerstören, wenn doppelte Namen vorhanden sind
-        for errdev in err_names:
-            self.device.__delattr__(errdev, False)
+        # Check equal device names and destroy name attribute of device class
+        for check_dev in err_names_check:
+            if len(err_names_check[check_dev]) == 1:
+                continue
+            self.device.__delattr__(check_dev, False)
             warnings.warn(
-                "equal device name in pictory configuration. can not "
-                "build device to access by name. you can access all devices "
-                "by position number .device[nn] only!",
+                "equal device name '{0}' in pictory configuration. you can "
+                "access this devices by position number .device[{1}] only!"
+                "".format(check_dev, "|".join(err_names_check[check_dev])),
                 Warning
             )
 
@@ -355,6 +357,9 @@ class RevPiModIO(object):
 
             # RS485 errors schreiben
             self.writeprocimg(self.core)
+
+        # Set replace IO before autostart to prevent cycle time exhausting
+        self._configure_replace_io(self._get_cpreplaceio())
 
         # Optional ins autorefresh aufnehmen
         if self._autorefresh:
@@ -1348,7 +1353,6 @@ class RevPiModIOSelected(RevPiModIO):
                 )
 
         self._configure(self.get_jconfigrsc())
-        self._configure_replace_io(self._get_cpreplaceio())
 
         if len(self.device) == 0:
             if type(self) == RevPiModIODriver:
