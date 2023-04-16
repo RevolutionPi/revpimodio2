@@ -7,11 +7,11 @@ Homepage: https://revpimodio.org/en/homepage/
 Vcs-Browser: https://github.com/RevolutionPi/revpimodio2
 Vcs-Git: https://github.com/RevolutionPi/revpimodio2.git
 Build-Depends:
- debhelper-compat (= 12),
- dh-python,
- python3-all,
- python3-setuptools,
- python3-sphinx
+  debhelper-compat (= 12),
+  dh-python,
+  python3-all,
+  python3-setuptools,
+  python3-sphinx
 Standards-Version: 4.5.0
 X-Python3-Version: >= 3.5
 Testsuite: autopkgtest-pkg-python
