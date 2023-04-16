@@ -1,6 +1,6 @@
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
-Upstream-Name: revpimodio2
 Source: https://github.com/naruxde/revpimodio2
+Upstream-Name: revpimodio2
 
 Files: *
 Copyright: 2021 Sven Sager <akira@narux.de>
