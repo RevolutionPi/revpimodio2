@@ -1,13 +1,14 @@
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Source: https://github.com/naruxde/revpimodio2
 Upstream-Name: revpimodio2
+Upstream-Contact: Sven Sager <akira@narux.de>
 
 Files: *
-Copyright: 2021 Sven Sager <akira@narux.de>
+Copyright: 2017-2022 Sven Sager
 License: LGPL-3+
 
 Files: debian/*
-Copyright: 2021 Philipp Rosenberger <p.rosenberger@kunbus.com>
+Copyright: 2021-2023 KUNBUS GmbH
 License: GPL-2+
 
 License: GPL-2+
