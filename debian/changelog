@@ -1,4 +1,4 @@
-revpimodio2 (2.5.10-1+revpi10) unstable; urgency=medium
+revpimodio2 (2.5.10-1+revpi11+1) bullseye; urgency=medium
 
   [ Sven Sager ]
   * Configure replaced ios from file before starting autorefresh

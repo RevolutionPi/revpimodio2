@@ -5,14 +5,14 @@ Maintainer: KUNBUS GmbH <support@kunbus.com>
 Rules-Requires-Root: no
 Homepage: https://revpimodio.org/
 Vcs-Browser: https://github.com/RevolutionPi/revpimodio2
-Vcs-Git: https://github.com/RevolutionPi/revpimodio2.git
+Vcs-Git: https://github.com/RevolutionPi/revpimodio2.git -b raspios/bullseye
 Build-Depends:
-  debhelper-compat (= 12),
+  debhelper-compat (= 13),
   dh-python,
   python3-all,
   python3-setuptools,
   python3-sphinx
-Standards-Version: 4.3.0
+Standards-Version: 4.5.1
 
 Package: python3-revpimodio2
 Architecture: all
