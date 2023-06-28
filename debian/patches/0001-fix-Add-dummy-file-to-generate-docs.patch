@@ -1,0 +1,17 @@
+From: Sven Sager <s.sager@kunbus.com>
+Date: Wed, 28 Jun 2023 17:10:33 +0200
+Subject: fix: Add dummy file to generate docs
+
+---
+ docs/contents.rst | 2 ++
+ 1 file changed, 2 insertions(+)
+ create mode 100644 docs/contents.rst
+
+diff --git a/docs/contents.rst b/docs/contents.rst
+new file mode 100644
+index 0000000..825e2f8
+--- /dev/null
++++ b/docs/contents.rst
+@@ -0,0 +1,2 @@
++..
++        dummy file for old sphinx version
