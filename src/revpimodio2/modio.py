@@ -1,5 +1,9 @@
 # -*- coding: utf-8 -*-
 """RevPiModIO Hauptklasse fuer piControl0 Zugriff."""
+__author__ = "Sven Sager"
+__copyright__ = "Copyright (C) 2023 Sven Sager"
+__license__ = "LGPLv2"
+
 import warnings
 from configparser import ConfigParser
 from json import load as jload
@@ -12,13 +16,41 @@ from stat import S_ISCHR
 from threading import Event, Lock, Thread
 from timeit import default_timer
 
-from revpimodio2 import BOTH, DeviceNotFoundError, FALLING, RISING, acheck
+from . import app as appmodule
+from . import device as devicemodule
+from . import helper as helpermodule
+from . import summary as summarymodule
+from ._internal import acheck, RISING, FALLING, BOTH
+from .errors import DeviceNotFoundError
+from .io import IOList
+from .io import StructIO
+from .pictory import DeviceType, ProductType
 
-__author__ = "Sven Sager"
-__copyright__ = "Copyright (C) 2020 Sven Sager"
-__license__ = "LGPLv3"
 
-from .pictory import ProductType
+class DevSelect:
+    __slots__ = "type", "other_device_key", "values"
+
+    def __init__(
+            self,
+            device_type=DeviceType.IGNORED,
+            search_key: str = None,
+            search_values=(),
+    ):
+        """
+        Create a customized search filter for RevPiModIOSelected search.
+
+        If you leave search_key set to None or empty string, the default, the
+        given search_values will automatically select the search_key. This
+        depends on the data type in the tuple. A string value searches for
+        device name, an integer value searches for device position.
+
+        :param device_type: Set a filter for just this device types
+        :param search_key: Set a property of device to search values or auto
+        :param search_values: Search for this values
+        """
+        self.type = device_type
+        self.other_device_key = search_key or ""
+        self.values = search_values
 
 
 class RevPiModIO(object):
@@ -33,14 +65,16 @@ class RevPiModIO(object):
     Device Positionen oder Device Namen.
     """
 
-    __slots__ = "__cleanupfunc", "_autorefresh", "_buffedwrite", "_exit_level", \
-                "_configrsc", "_shared_procimg", "_exit", "_imgwriter", "_ioerror", \
-                "_length", "_looprunning", "_lst_devselect", "_lst_refresh", \
-                "_lst_shared", \
-                "_maxioerrors", "_myfh", "_myfh_lck", "_monitoring", "_procimg", \
-                "_simulator", "_syncoutputs", "_th_mainloop", "_waitexit", \
-                "core", "app", "device", "exitsignal", "io", "summary", "_debug", \
-                "_replace_io_file", "_run_on_pi"
+    __slots__ = "__cleanupfunc", \
+        "_autorefresh", "_buffedwrite", "_configrsc", "_debug", "_devselect", \
+        "_exit", "_exit_level", "_imgwriter", "_ioerror", \
+        "_length", "_looprunning", "_lst_devselect", "_lst_refresh", \
+        "_lst_shared", \
+        "_maxioerrors", "_monitoring", "_myfh", "_myfh_lck", \
+        "_procimg", "_replace_io_file", "_run_on_pi", \
+        "_set_device_based_cycle_time", "_simulator", "_shared_procimg", \
+        "_syncoutputs", "_th_mainloop", "_waitexit", \
+        "app", "core", "device", "exitsignal", "io", "summary"
 
     def __init__(
             self, autorefresh=False, monitoring=False, syncoutputs=True,
@@ -57,7 +91,8 @@ class RevPiModIO(object):
         :param simulator: Laedt das Modul als Simulator und vertauscht IOs
         :param debug: Gibt alle Warnungen inkl. Zyklusprobleme aus
         :param replace_io_file: Replace IO Konfiguration aus Datei laden
-        :param shared_procimg: Share process image with other processes (insecure for automation, little slower)
+        :param shared_procimg: Share process image with other processes, this
+                               could be insecure for automation
         :param direct_output: Deprecated, use shared_procimg
         """
         # Parameterprüfung
@@ -81,6 +116,7 @@ class RevPiModIO(object):
         self._configrsc = configrsc
         self._monitoring = monitoring
         self._procimg = "/dev/piControl0" if procimg is None else procimg
+        self._set_device_based_cycle_time = True
         self._simulator = simulator
         self._shared_procimg = shared_procimg or direct_output
         self._syncoutputs = syncoutputs
@@ -91,13 +127,13 @@ class RevPiModIO(object):
         self.__cleanupfunc = None
         self._buffedwrite = False
         self._debug = 1
+        self._devselect = DevSelect()
         self._exit = Event()
         self._exit_level = 0
         self._imgwriter = None
         self._ioerror = 0
         self._length = 0
         self._looprunning = False
-        self._lst_devselect = []
         self._lst_refresh = []
         self._lst_shared = []
         self._maxioerrors = 0
@@ -197,27 +233,33 @@ class RevPiModIO(object):
         # App Klasse instantiieren
         self.app = appmodule.App(jconfigrsc["App"])
 
-        # Devicefilter anwenden
-        if len(self._lst_devselect) > 0:
-            lst_found = []
+        # Apply device filter
+        if self._devselect.values:
 
-            if type(self) == RevPiModIODriver \
-                    or type(self) == RevPiNetIODriver:
-                _searchtype = "VIRTUAL"
-            else:
-                _searchtype = None
+            # Check for supported types in values
+            for dev in self._devselect.values:
+                if type(dev) not in (int, str):
+                    raise ValueError(
+                        "need device position as <class 'int'> or "
+                        "device name as <class 'str'>"
+                    )
 
-            # Angegebene Devices suchen
+            lst_devices = []
             for dev in jconfigrsc["Devices"]:
-                if _searchtype is None or dev["type"] == _searchtype:
-                    if dev["name"] in self._lst_devselect:
-                        lst_found.append(dev)
-                    elif dev["position"].isdigit() \
-                            and int(dev["position"]) in self._lst_devselect:
-                        lst_found.append(dev)
+                if self._devselect.type and self._devselect.type != dev["type"]:
+                    continue
+                if self._devselect.other_device_key:
+                    key_value = str(dev[self._devselect.other_device_key])
+                    if key_value not in self._devselect.values:
+                        # The list is always filled with <class 'str'>
+                        continue
+                else:
+                    # Auto search depending of value item type
+                    if not (dev["name"] in self._devselect.values
+                            or int(dev["position"]) in self._devselect.values):
+                        continue
 
-            # Devices Filter übernehmen
-            lst_devices = lst_found
+                lst_devices.append(dev)
         else:
             # Devices aus JSON übernehmen
             lst_devices = jconfigrsc["Devices"]
@@ -230,13 +272,13 @@ class RevPiModIO(object):
         err_names_check = {}
         for device in sorted(lst_devices, key=lambda x: x["offset"]):
 
-            # VDev alter piCtory Versionen auf Kunbus-Standard ändern
+            # VDev alter piCtory Versionen auf KUNBUS-Standard ändern
             if device["position"] == "adap.":
                 device["position"] = 64
                 while device["position"] in self.device:
                     device["position"] += 1
 
-            if device["type"] == "BASE":
+            if device["type"] == DeviceType.BASE:
                 # Basedevices
                 pt = int(device["productType"])
                 if pt == ProductType.REVPI_CORE:
@@ -248,6 +290,12 @@ class RevPiModIO(object):
                 elif pt == ProductType.REVPI_CONNECT:
                     # RevPi Connect
                     dev_new = devicemodule.Connect(
+                        self, device, simulator=self._simulator
+                    )
+                    self.core = dev_new
+                elif pt == ProductType.REVPI_CONNECT_4:
+                    # RevPi Connect 4
+                    dev_new = devicemodule.Connect4(
                         self, device, simulator=self._simulator
                     )
                     self.core = dev_new
@@ -268,10 +316,12 @@ class RevPiModIO(object):
                     dev_new = devicemodule.Base(
                         self, device, simulator=self._simulator
                     )
-            elif device["type"] == "LEFT_RIGHT":
+            elif device["type"] == DeviceType.LEFT_RIGHT:
                 # IOs
                 pt = int(device["productType"])
-                if pt == ProductType.DIO or pt == ProductType.DI or pt == ProductType.DO:
+                if pt == ProductType.DIO \
+                        or pt == ProductType.DI \
+                        or pt == ProductType.DO:
                     # DIO / DI / DO
                     dev_new = devicemodule.DioModule(
                         self, device, simulator=self._simulator
@@ -281,17 +331,17 @@ class RevPiModIO(object):
                     dev_new = devicemodule.Device(
                         self, device, simulator=self._simulator
                     )
-            elif device["type"] == "VIRTUAL":
+            elif device["type"] == DeviceType.VIRTUAL:
                 # Virtuals
                 dev_new = devicemodule.Virtual(
                     self, device, simulator=self._simulator
                 )
-            elif device["type"] == "EDGE":
+            elif device["type"] == DeviceType.EDGE:
                 # Gateways
                 dev_new = devicemodule.Gateway(
                     self, device, simulator=self._simulator
                 )
-            elif device["type"] == "RIGHT":
+            elif device["type"] == DeviceType.RIGHT:
                 # Connectdevice
                 dev_new = None
             else:
@@ -333,8 +383,8 @@ class RevPiModIO(object):
         # ImgWriter erstellen
         self._imgwriter = helpermodule.ProcimgWriter(self)
 
-        # Refreshzeit CM1 25 Hz / CM3 50 Hz
-        if not isinstance(self, RevPiNetIO):
+        if self._set_device_based_cycle_time:
+            # Refreshzeit CM1 25 Hz / CM3 50 Hz
             self._imgwriter.refresh = 20 if cpu_count() > 1 else 40
 
         # Aktuellen Outputstatus von procimg einlesen
@@ -403,6 +453,9 @@ class RevPiModIO(object):
                         "".format(io, creplaceio[io]["bit"])
                     )
 
+            if "wordorder" in creplaceio[io]:
+                dict_replace["wordorder"] = creplaceio[io]["wordorder"]
+
             if "export" in creplaceio[io]:
                 try:
                     dict_replace["export"] = creplaceio[io].getboolean("export")
@@ -454,7 +507,7 @@ class RevPiModIO(object):
                 self.io[parentio].replace_io(name=io, **dict_replace)
             except Exception as e:
                 # NOTE: Bei Selected/Driver kann nicht geprüft werden
-                if len(self._lst_devselect) == 0:
+                if len(self._devselect.values) == 0:
                     raise RuntimeError(
                         "replace_io_file: can not replace '{0}' with '{1}' "
                         "| RevPiModIO message: {2}".format(parentio, io, e)
@@ -877,7 +930,7 @@ class RevPiModIO(object):
         Exportiert ersetzte IOs dieser Instanz.
 
         Exportiert alle ersetzten IOs, welche mit .replace_io(...) angelegt
-        wurden. Die Datei kann z.B. fuer RevPiPyLoad verwndet werden um Daten
+        wurden. Die Datei kann z.B. fuer RevPiPyLoad verwendet werden um Daten
         in den neuen Formaten per MQTT zu uebertragen oder mit RevPiPyControl
         anzusehen.
 
@@ -899,6 +952,8 @@ class RevPiModIO(object):
                     cp[io.name]["bit"] = str(io._bitaddress)
                 if io._byteorder != "little":
                     cp[io.name]["byteorder"] = io._byteorder
+                if io._wordorder:
+                    cp[io.name]["wordorder"] = io._wordorder
                 if type(io.defaultvalue) is bytes:
                     if any(io.defaultvalue):
                         # Convert each byte to an integer
@@ -1311,7 +1366,7 @@ class RevPiModIOSelected(RevPiModIO):
     Klasse fuer die Verwaltung einzelner Devices aus piCtory.
 
     Diese Klasse uebernimmt nur angegebene Devices der piCtory Konfiguration
-    und laedt sie inkl. IOs. Sie uebernimmt die exklusive Verwaltung des
+    und bildet sie inkl. IOs ab. Sie uebernimmt die exklusive Verwaltung des
     Adressbereichs im Prozessabbild an dem sich die angegebenen Devices
     befinden und stellt sicher, dass die Daten synchron sind.
     """
@@ -1338,39 +1393,39 @@ class RevPiModIOSelected(RevPiModIO):
             simulator, debug, replace_io_file, shared_procimg, direct_output
         )
 
-        # Device liste erstellen
-        if type(deviceselection) == list:
-            for dev in deviceselection:
-                self._lst_devselect.append(dev)
-        else:
-            self._lst_devselect.append(deviceselection)
+        if type(deviceselection) is not DevSelect:
+            # Convert to tuple
+            if type(deviceselection) not in (list, tuple):
+                deviceselection = (deviceselection,)
 
-        for vdev in self._lst_devselect:
-            if type(vdev) != int and type(vdev) != str:
-                raise ValueError(
-                    "need device position as <class 'int'> or device name as "
-                    "<class 'str'>"
-                )
+            # Automatic search for name and position depends on type int / str
+            self._devselect = DevSelect(DeviceType.IGNORED, "", deviceselection)
+
+        else:
+            self._devselect = deviceselection
 
         self._configure(self.get_jconfigrsc())
 
         if len(self.device) == 0:
-            if type(self) == RevPiModIODriver:
+            if self._devselect.type:
                 raise DeviceNotFoundError(
-                    "could not find any given VIRTUAL devices in config"
+                    "could not find ANY given {0} devices in config"
+                    "".format(self._devselect.type)
                 )
             else:
                 raise DeviceNotFoundError(
-                    "could not find any given devices in config"
+                    "could not find ANY given devices in config"
                 )
-        elif len(self.device) != len(self._lst_devselect):
-            if type(self) == RevPiModIODriver:
+        elif not self._devselect.other_device_key \
+                and len(self.device) != len(self._devselect.values):
+            if self._devselect.type:
                 raise DeviceNotFoundError(
-                    "could not find all given VIRTUAL devices in config"
+                    "could not find ALL given {0} devices in config"
+                    "".format(self._devselect.type)
                 )
             else:
                 raise DeviceNotFoundError(
-                    "could not find all given devices in config"
+                    "could not find ALL given devices in config"
                 )
 
 
@@ -1398,11 +1453,13 @@ class RevPiModIODriver(RevPiModIOSelected):
 
         :param virtdev: Virtuelles Device oder mehrere als <class 'list'>
         :ref: :func:`RevPiModIO.__init__()`
-
         """
         # Parent mit monitoring=False und simulator=True laden
+        if type(virtdev) not in (list, tuple):
+            virtdev = (virtdev,)
+        dev_select = DevSelect(DeviceType.VIRTUAL, "", virtdev)
         super().__init__(
-            virtdev, autorefresh, False, syncoutputs, procimg, configrsc,
+            dev_select, autorefresh, False, syncoutputs, procimg, configrsc,
             True, debug, replace_io_file, shared_procimg, direct_output
         )
 
@@ -1428,7 +1485,6 @@ def run_plc(
     :param debug: Print all warnings and detailed error messages
     :param procimg: Use different process image
     :param configrsc: Use different piCtory configuration
-
     :return: None or the return value of the cycle function
     """
     rpi = RevPiModIO(
@@ -1440,14 +1496,3 @@ def run_plc(
     )
     rpi.handlesignalend()
     return rpi.cycleloop(func, cycletime)
-
-
-# Nachträglicher Import
-from . import app as appmodule
-from . import device as devicemodule
-from . import helper as helpermodule
-from . import summary as summarymodule
-from .io import IOList
-from .io import StructIO
-
-from .netio import RevPiNetIODriver, RevPiNetIO
