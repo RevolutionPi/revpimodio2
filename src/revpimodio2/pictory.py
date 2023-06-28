@@ -1,9 +1,8 @@
 # -*- coding: utf-8 -*-
 """Pictory aliases for IO values."""
-
 __author__ = "Théo Rozier"
-__copyright__ = "Copyright (C) 2020 Sven Sager"
-__license__ = "LGPLv3"
+__copyright__ = "Copyright (C) 2023 Sven Sager"
+__license__ = "LGPLv2"
 
 
 # RAP files are located under "/var/www/pictory/resources/data/rap/".
@@ -44,6 +43,17 @@ class ProductType:
     REVPI_COMPACT = 104
     REVPI_CONNECT = 105
     REVPI_FLAT = 135
+    REVPI_CONNECT_4 = 136
+
+
+class DeviceType:
+    """Module key "type" in piCtory file."""
+    IGNORED = ""
+    BASE = "BASE"  # Core devices
+    EDGE = "EDGE"  # Gateways
+    LEFT_RIGHT = "LEFT_RIGHT"  # IOs
+    RIGHT = "RIGHT"  # Connect device
+    VIRTUAL = "VIRTUAL"  # All virtual devices
 
 
 class AIO:

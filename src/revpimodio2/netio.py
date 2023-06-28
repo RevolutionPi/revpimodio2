@@ -1,5 +1,9 @@
 # -*- coding: utf-8 -*-
 """RevPiModIO Hauptklasse fuer Netzwerkzugriff."""
+__author__ = "Sven Sager"
+__copyright__ = "Copyright (C) 2023 Sven Sager"
+__license__ = "LGPLv2"
+
 import socket
 import warnings
 from configparser import ConfigParser
@@ -8,13 +12,10 @@ from re import compile
 from struct import pack, unpack
 from threading import Event, Lock, Thread
 
-from revpimodio2 import DeviceNotFoundError
 from .device import Device
-from .modio import RevPiModIO as _RevPiModIO
-
-__author__ = "Sven Sager"
-__copyright__ = "Copyright (C) 2020 Sven Sager"
-__license__ = "LGPLv3"
+from .errors import DeviceNotFoundError
+from .modio import DevSelect, RevPiModIO as _RevPiModIO
+from .pictory import DeviceType
 
 # Synchronisierungsbefehl
 _syssync = b'\x01\x06\x16\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x17'
@@ -57,11 +58,11 @@ class NetFH(Thread):
     """
 
     __slots__ = "__buff_size", "__buff_block", "__buff_recv", \
-                "__by_buff", "__check_replace_ios", "__config_changed", \
-                "__int_buff", "__dictdirty", "__flusherr", "__replace_ios_h", \
-                "__pictory_h", "__position", "__sockerr", "__sockend", \
-                "__socklock", "__timeout", "__waitsync", "_address", \
-                "_slavesock", "daemon"
+        "__by_buff", "__check_replace_ios", "__config_changed", \
+        "__int_buff", "__dictdirty", "__flusherr", "__replace_ios_h", \
+        "__pictory_h", "__position", "__sockerr", "__sockend", \
+        "__socklock", "__timeout", "__waitsync", "_address", \
+        "_serversock", "daemon"
 
     def __init__(self, address: tuple, check_replace_ios: bool, timeout=500):
         """
@@ -90,7 +91,7 @@ class NetFH(Thread):
         self.__timeout = None
         self.__waitsync = None
         self._address = address
-        self._slavesock = None  # type: socket.socket
+        self._serversock = None  # type: socket.socket
 
         # Parameterprüfung
         if not isinstance(address, tuple):
@@ -104,8 +105,8 @@ class NetFH(Thread):
         self.__set_systimeout(timeout)
         self._connect()
 
-        if self._slavesock is None:
-            raise FileNotFoundError("can not connect to revpi slave")
+        if self._serversock is None:
+            raise FileNotFoundError("can not connect to revpi server")
 
         # NetFH konfigurieren
         self.__position = 0
@@ -128,10 +129,10 @@ class NetFH(Thread):
             # Alles beenden, wenn nicht erlaubt
             self.__sockend.set()
             self.__sockerr.set()
-            self._slavesock.close()
+            self._serversock.close()
             raise AclException(
                 "write access to the process image is not permitted - use "
-                "monitoring=True or check aclplcslave.conf on RevPi and "
+                "monitoring=True or check aclplcserver.conf on RevPi and "
                 "reload revpipyload!"
             )
 
@@ -145,8 +146,8 @@ class NetFH(Thread):
             self.__timeout = value / 1000
 
             # Timeouts in Socket setzen
-            if self._slavesock is not None:
-                self._slavesock.settimeout(self.__timeout)
+            if self._serversock is not None:
+                self._serversock.settimeout(self.__timeout)
 
             # 45 Prozent vom Timeout für Synctimer verwenden
             self.__waitsync = self.__timeout / 100 * 45
@@ -155,7 +156,7 @@ class NetFH(Thread):
             raise ValueError("value must between 10 and 60000 milliseconds")
 
     def _connect(self) -> None:
-        """Stellt die Verbindung zu einem RevPiSlave her."""
+        """Stellt die Verbindung zu einem RevPiPlcServer her."""
         # Neuen Socket aufbauen
         so = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
@@ -204,10 +205,10 @@ class NetFH(Thread):
         else:
             # Alten Socket trennen
             with self.__socklock:
-                if self._slavesock is not None:
-                    self._slavesock.close()
+                if self._serversock is not None:
+                    self._serversock.close()
 
-                self._slavesock = so
+                self._serversock = so
                 self.__sockerr.clear()
 
             # Timeout setzen
@@ -240,7 +241,7 @@ class NetFH(Thread):
             send_len = len(send_bytes)
             while counter < send_len:
                 # Send loop to trigger timeout of socket on each send
-                sent = self._slavesock.send(send_bytes[counter:])
+                sent = self._serversock.send(send_bytes[counter:])
                 if sent == 0:
                     self.__sockerr.set()
                     raise IOError("lost network connection while send")
@@ -248,7 +249,7 @@ class NetFH(Thread):
 
             self.__buff_recv.clear()
             while recv_len > 0:
-                count = self._slavesock.recv_into(
+                count = self._serversock.recv_into(
                     self.__buff_block, min(recv_len, self.__buff_size)
                 )
                 if count == 0:
@@ -269,7 +270,7 @@ class NetFH(Thread):
 
     def clear_dirtybytes(self, position=None) -> None:
         """
-        Entfernt die konfigurierten Dirtybytes vom RevPi Slave.
+        Entfernt die konfigurierten Dirtybytes vom RevPi Server.
 
         Diese Funktion wirft keine Exception bei einem uebertragungsfehler,
         veranlasst aber eine Neuverbindung.
@@ -318,17 +319,17 @@ class NetFH(Thread):
         self.__sockerr.set()
 
         # Vom Socket sauber trennen
-        if self._slavesock is not None:
+        if self._serversock is not None:
             try:
                 self.__socklock.acquire()
-                self._slavesock.sendall(_sysexit)
-                self._slavesock.shutdown(socket.SHUT_WR)
+                self._serversock.sendall(_sysexit)
+                self._serversock.shutdown(socket.SHUT_WR)
             except Exception:
                 pass
             finally:
                 self.__socklock.release()
 
-            self._slavesock.close()
+            self._serversock.close()
 
     def flush(self) -> None:
         """Schreibpuffer senden."""
@@ -344,7 +345,9 @@ class NetFH(Thread):
             # b CM ii ii 00000000 b = 16
             buff = self._direct_sr(pack(
                 "=c2sHH8xc",
-                HEADER_START, b'FD', self.__int_buff, len(self.__by_buff), HEADER_STOP
+                HEADER_START,
+                b'FD', self.__int_buff, len(self.__by_buff),
+                HEADER_STOP
             ) + self.__by_buff, 1)
         except Exception:
             raise
@@ -535,12 +538,12 @@ class NetFH(Thread):
             # Kein Fehler aufgetreten, sync durchführen wenn socket frei
             if self.__socklock.acquire(blocking=False):
                 try:
-                    self._slavesock.sendall(_syssync)
+                    self._serversock.sendall(_syssync)
 
                     self.__buff_recv.clear()
                     recv_lenght = 2
                     while recv_lenght > 0:
-                        count = self._slavesock.recv_into(
+                        count = self._serversock.recv_into(
                             self.__buff_block, recv_lenght
                         )
                         if count == 0:
@@ -663,9 +666,10 @@ class NetFH(Thread):
             self.__int_buff += 1
 
             # Datenblock mit Position und Länge in Puffer ablegen
-            self.__by_buff += self.__position.to_bytes(length=2, byteorder="little") + \
-                len(bytebuff).to_bytes(length=2, byteorder="little") + \
-                bytebuff
+            self.__by_buff += \
+                self.__position.to_bytes(length=2, byteorder="little") \
+                + len(bytebuff).to_bytes(length=2, byteorder="little") \
+                + bytebuff
 
         # TODO: Bufferlänge und dann flushen?
 
@@ -706,11 +710,13 @@ class RevPiNetIO(_RevPiModIO):
         :param simulator: Laedt das Modul als Simulator und vertauscht IOs
         :param debug: Gibt bei allen Fehlern komplette Meldungen aus
         :param replace_io_file: Replace IO Konfiguration aus Datei laden
-        :param shared_procimg: Share process image with other processes (insecure for automation, little slower)
+        :param shared_procimg: Share process image with other processes, this
+                               could be insecure for automation
         :param direct_output: Deprecated, use shared_procimg
         """
         check_ip = compile(
-            r"^(25[0-5]|(2[0-4]|[01]?\d|)\d)(\.(25[0-5]|(2[0-4]|[01]?\d|)\d)){3}$"
+            r"^(25[0-5]|(2[0-4]|[01]?\d|)\d)"
+            r"(\.(25[0-5]|(2[0-4]|[01]?\d|)\d)){3}$"
         )
 
         # Adresse verarbeiten
@@ -760,6 +766,7 @@ class RevPiNetIO(_RevPiModIO):
             shared_procimg=shared_procimg,
             direct_output=direct_output,
         )
+        self._set_device_based_cycle_time = False
 
         # Netzwerkfilehandler anlegen
         self._myfh = self._create_myfh()
@@ -850,7 +857,7 @@ class RevPiNetIO(_RevPiModIO):
 
     def net_cleardefaultvalues(self, device=None) -> None:
         """
-        Loescht Defaultwerte vom PLC Slave.
+        Loescht Defaultwerte vom PLC Server.
 
         :param device: nur auf einzelnes Device anwenden, sonst auf Alle
         """
@@ -872,7 +879,7 @@ class RevPiNetIO(_RevPiModIO):
 
     def net_setdefaultvalues(self, device=None) -> None:
         """
-        Konfiguriert den PLC Slave mit den piCtory Defaultwerten.
+        Konfiguriert den PLC Server mit den piCtory Defaultwerten.
 
         Diese Werte werden auf dem RevPi gesetzt, wenn die Verbindung
         unerwartet (Netzwerkfehler) unterbrochen wird.
@@ -917,7 +924,7 @@ class RevPiNetIO(_RevPiModIO):
                     dirtybytes += \
                         int_byte.to_bytes(length=1, byteorder="little")
 
-            # Dirtybytes an PLC Slave senden
+            # Dirtybytes an PLC Server senden
             self._myfh.set_dirtybytes(
                 dev._offset + dev._slc_out.start, dirtybytes
             )
@@ -931,7 +938,7 @@ class RevPiNetIOSelected(RevPiNetIO):
     Klasse fuer die Verwaltung einzelner Devices aus piCtory.
 
     Diese Klasse uebernimmt nur angegebene Devices der piCtory Konfiguration
-    und bilded sie inkl. IOs ab. Sie uebernimmt die exklusive Verwaltung des
+    und bildet sie inkl. IOs ab. Sie uebernimmt die exklusive Verwaltung des
     Adressbereichs im Prozessabbild an dem sich die angegebenen Devices
     befinden und stellt sicher, dass die Daten synchron sind.
     """
@@ -958,39 +965,39 @@ class RevPiNetIOSelected(RevPiNetIO):
             replace_io_file, shared_procimg, direct_output
         )
 
-        # Device liste erstellen
-        if type(deviceselection) == list:
-            for dev in deviceselection:
-                self._lst_devselect.append(dev)
-        else:
-            self._lst_devselect.append(deviceselection)
+        if type(deviceselection) is not DevSelect:
+            # Convert to tuple
+            if type(deviceselection) not in (list, tuple):
+                deviceselection = (deviceselection,)
 
-        for vdev in self._lst_devselect:
-            if type(vdev) != int and type(vdev) != str:
-                raise ValueError(
-                    "need device position as <class 'int'> or device name as "
-                    "<class 'str'>"
-                )
+            # Automatic search for name and position depends on type int / str
+            self._devselect = DevSelect(DeviceType.IGNORED, "", deviceselection)
+
+        else:
+            self._devselect = deviceselection
 
         self._configure(self.get_jconfigrsc())
 
         if len(self.device) == 0:
-            if type(self) == RevPiNetIODriver:
+            if self._devselect.type:
                 raise DeviceNotFoundError(
-                    "could not find any given VIRTUAL devices in config"
+                    "could not find ANY given {0} devices in config"
+                    "".format(self._devselect.type)
                 )
             else:
                 raise DeviceNotFoundError(
-                    "could not find any given devices in config"
+                    "could not find ANY given devices in config"
                 )
-        elif len(self.device) != len(self._lst_devselect):
-            if type(self) == RevPiNetIODriver:
+        elif not self._devselect.other_device_key \
+                and len(self.device) != len(self._devselect.values):
+            if self._devselect.type:
                 raise DeviceNotFoundError(
-                    "could not find all given VIRTUAL devices in config"
+                    "could not find ALL given {0} devices in config"
+                    "".format(self._devselect.type)
                 )
             else:
                 raise DeviceNotFoundError(
-                    "could not find all given devices in config"
+                    "could not find ALL given devices in config"
                 )
 
 
@@ -1021,7 +1028,41 @@ class RevPiNetIODriver(RevPiNetIOSelected):
         :ref: :func:`RevPiModIO.__init__()`
         """
         # Parent mit monitoring=False und simulator=True laden
+        if type(virtdev) not in (list, tuple):
+            virtdev = (virtdev,)
+        dev_select = DevSelect(DeviceType.VIRTUAL, "", virtdev)
         super().__init__(
-            address, virtdev, autorefresh, False, syncoutputs, True, debug,
+            address, dev_select, autorefresh, False, syncoutputs, True, debug,
             replace_io_file, shared_procimg, direct_output
         )
+
+
+def run_net_plc(
+        address, func, cycletime=50, replace_io_file=None, debug=True):
+    """
+    Run Revoluton Pi as real plc with cycle loop and exclusive IO access.
+
+    This function is just a shortcut to run the module in cycle loop mode and
+    handle the program exit signal. You will access the .io, .core, .device
+    via the cycletools in your cycle function.
+
+    Shortcut for this source code:
+        rpi = RevPiModIO(autorefresh=True, replace_io_file=..., debug=...)
+        rpi.handlesignalend()
+        return rpi.cycleloop(func, cycletime)
+
+    :param address: IP-Adresse <class 'str'> / (IP, Port) <class 'tuple'>
+    :param func: Function to run every set milliseconds
+    :param cycletime: Cycle time in milliseconds
+    :param replace_io_file: Load replace IO configuration from file
+    :param debug: Print all warnings and detailed error messages
+    :return: None or the return value of the cycle function
+    """
+    rpi = RevPiNetIO(
+        address=address,
+        autorefresh=True,
+        replace_io_file=replace_io_file,
+        debug=debug,
+    )
+    rpi.handlesignalend()
+    return rpi.cycleloop(func, cycletime)

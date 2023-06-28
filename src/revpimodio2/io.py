@@ -1,15 +1,15 @@
 # -*- coding: utf-8 -*-
 """RevPiModIO Modul fuer die Verwaltung der IOs."""
+__author__ = "Sven Sager"
+__copyright__ = "Copyright (C) 2023 Sven Sager"
+__license__ = "LGPLv2"
+
 import struct
 from re import match as rematch
 from threading import Event
 
-from revpimodio2 import BOTH, FALLING, INP, MEM, OUT, RISING, consttostr, \
-    PROCESS_IMAGE_SIZE
-
-__author__ = "Sven Sager"
-__copyright__ = "Copyright (C) 2020 Sven Sager"
-__license__ = "LGPLv3"
+from ._internal import consttostr, RISING, FALLING, BOTH, INP, OUT, \
+    MEM, PROCESS_IMAGE_SIZE
 
 try:
     # Funktioniert nur auf Unix
@@ -176,7 +176,8 @@ class IOList(object):
                 if type(oldio) == StructIO:
                     # Hier gibt es schon einen neuen IO
                     if oldio._bitshift:
-                        if io._bitshift == oldio._bitshift and io._slc_address == oldio._slc_address:
+                        if io._bitshift == oldio._bitshift \
+                                and io._slc_address == oldio._slc_address:
                             raise MemoryError(
                                 "bit {0} already assigned to '{1}'".format(
                                     io._bitaddress, oldio._name
@@ -209,10 +210,9 @@ class IOList(object):
         if io._defaultvalue is None:
             # Nur bei StructIO und keiner gegebenen defaultvalue übernehmen
             if io._bitshift:
+                io_byte_address = io._parentio_address - io.address
                 io._defaultvalue = bool(
-                    io._parentio_defaultvalue[
-                        io._parentio_address - io.address
-                    ] & io._bitshift
+                    io._parentio_defaultvalue[io_byte_address] & io._bitshift
                 )
             else:
                 io._defaultvalue = calc_defaultvalue
@@ -290,11 +290,12 @@ class IOBase(object):
     """
 
     __slots__ = "__bit_ioctl_off", "__bit_ioctl_on", "_bitaddress", \
-                "_bitshift", "_bitlength", "_byteorder", "_defaultvalue", \
-                "_export", "_iotype", "_length", "_name", "_parentdevice", \
-                "_read_only_io", "_signed", "_slc_address", "bmk"
+        "_bitshift", "_bitlength", "_byteorder", "_defaultvalue", \
+        "_export", "_iotype", "_length", "_name", "_parentdevice", \
+        "_read_only_io", "_signed", "_slc_address", "bmk"
 
-    def __init__(self, parentdevice, valuelist: list, iotype: int, byteorder: str, signed: bool):
+    def __init__(self, parentdevice, valuelist: list, iotype: int,
+                 byteorder: str, signed: bool):
         """
         Instantiierung der IOBase-Klasse.
 
@@ -311,7 +312,8 @@ class IOBase(object):
 
         # Bitadressen auf Bytes aufbrechen und umrechnen
         self._bitaddress = -1 if valuelist[7] == "" else int(valuelist[7]) % 8
-        self._bitshift = None if self._bitaddress == -1 else 1 << self._bitaddress
+        self._bitshift = None if self._bitaddress == -1 \
+            else 1 << self._bitaddress
 
         # Längenberechnung
         self._bitlength = int(valuelist[2])
@@ -428,7 +430,8 @@ class IOBase(object):
         """
         return self._name
 
-    def __reg_xevent(self, func, delay: int, edge: int, as_thread: bool, overwrite: bool, prefire: bool) -> None:
+    def __reg_xevent(self, func, delay: int, edge: int, as_thread: bool,
+                     overwrite: bool, prefire: bool) -> None:
         """
         Verwaltet reg_event und reg_timerevent.
 
@@ -1043,8 +1046,9 @@ class IntIOCounter(IntIO):
         # Deviceposition + leer + Counter_ID
         # ID-Bits: 7|6|5|4|3|2|1|0|15|14|13|12|11|10|9|8
         self.__ioctl_arg = \
-            parentdevice._position.to_bytes(1, "little") + b'\x00' + \
-            (1 << counter_id).to_bytes(2, "little")
+            parentdevice._position.to_bytes(1, "little") \
+            + b'\x00' \
+            + (1 << counter_id).to_bytes(2, "little")
 
         """
         IOCTL fuellt dieses struct, welches durch padding im Speicher nach
@@ -1139,6 +1143,7 @@ class IntIOReplaceable(IntIO):
         - bmk: interne Bezeichnung fuer IO
         - bit: Registriert IO als <class 'bool'> am angegebenen Bit im Byte
         - byteorder: Byteorder fuer den IO, Standardwert=little
+        - wordorder: Wordorder wird vor byteorder angewendet
         - defaultvalue: Standardwert fuer IO
         - event: Funktion fuer Eventhandling registrieren
         - delay: Verzoegerung in ms zum Ausloesen wenn Wert gleich bleibt
@@ -1179,7 +1184,7 @@ class StructIO(IOBase):
     """
 
     __slots__ = "__frm", "_parentio_address", "_parentio_defaultvalue", \
-                "_parentio_length", "_parentio_name"
+        "_parentio_length", "_parentio_name", "_wordorder"
 
     def __init__(self, parentio, name: str, frm: str, **kwargs):
         """
@@ -1192,6 +1197,7 @@ class StructIO(IOBase):
             - bmk: Bezeichnung fuer IO
             - bit: Registriert IO als <class 'bool'> am angegebenen Bit im Byte
             - byteorder: Byteorder fuer IO, Standardwert vom ersetzten IO
+            - wordorder: Wordorder wird vor byteorder angewendet
             - defaultvalue: Standardwert fuer IO, Standard vom ersetzten IO
         """
         # Structformatierung prüfen
@@ -1200,14 +1206,19 @@ class StructIO(IOBase):
         if regex is not None:
             # Byteorder prüfen und übernehmen
             byteorder = kwargs.get("byteorder", parentio._byteorder)
-            if not (byteorder == "little" or byteorder == "big"):
+            if byteorder not in ("little", "big"):
                 raise ValueError("byteorder must be 'little' or 'big'")
             bofrm = "<" if byteorder == "little" else ">"
+            self._wordorder = kwargs.get("wordorder", None)
 
             # Namen des parent fuer export merken
             self._parentio_name = parentio._name
 
             if frm == "?":
+                if self._wordorder:
+                    raise ValueError(
+                        "you can not use wordorder for bit based ios"
+                    )
                 bitaddress = kwargs.get("bit", 0)
                 max_bits = parentio._length * 8
                 if not (0 <= bitaddress < max_bits):
@@ -1225,11 +1236,20 @@ class StructIO(IOBase):
                 self._parentio_address = parentio.address
                 self._parentio_length = parentio._length
             else:
+                byte_length = struct.calcsize(bofrm + frm)
                 bitaddress = ""
-                bitlength = struct.calcsize(bofrm + frm) * 8
+                bitlength = byte_length * 8
                 self._parentio_address = None
                 self._parentio_defaultvalue = None
                 self._parentio_length = None
+                if self._wordorder:
+                    if self._wordorder not in ("little", "big"):
+                        raise ValueError("wordorder must be 'little' or 'big'")
+                    if byte_length % 2 != 0:
+                        raise ValueError(
+                            "the byte length of new io must must be even to "
+                            "use wordorder"
+                        )
 
             # [name,default,anzbits,adressbyte,export,adressid,bmk,bitaddress]
             valuelist = [
@@ -1280,12 +1300,20 @@ class StructIO(IOBase):
             # Inline get_structdefaultvalue()
             if self._bitshift:
                 return self.get_value()
-            else:
-                return struct.unpack(self.__frm, self.get_value())[0]
+            if self._wordorder == "little" and self._length > 2:
+                return struct.unpack(
+                    self.__frm,
+                    self._swap_word_order(self.get_value()),
+                )[0]
+            return struct.unpack(self.__frm, self.get_value())[0]
         else:
             # Inline set_structvalue()
             if self._bitshift:
                 self.set_value(value)
+            elif self._wordorder == "little" and self._length > 2:
+                self.set_value(
+                    self._swap_word_order(struct.pack(self.__frm, value))
+                )
             else:
                 self.set_value(struct.pack(self.__frm, value))
 
@@ -1305,6 +1333,21 @@ class StructIO(IOBase):
         """
         return self._signed
 
+    @staticmethod
+    def _swap_word_order(bytes_to_swap) -> bytes:
+        """
+        Swap word order of given bytes.
+
+        :param bytes_to_swap: Already length checked bytes to swap words
+        :return: Bytes with swapped word order
+        """
+        array_length = len(bytes_to_swap)
+        swap_array = bytearray(bytes_to_swap)
+        for i in range(0, array_length // 2, 2):
+            swap_array[-i - 2:array_length - i], swap_array[i:i + 2] = \
+                swap_array[i:i + 2], swap_array[-i - 2:array_length - i]
+        return bytes(swap_array)
+
     def get_structdefaultvalue(self):
         """
         Gibt die Defaultvalue mit struct Formatierung zurueck.
@@ -1313,8 +1356,20 @@ class StructIO(IOBase):
         """
         if self._bitshift:
             return self._defaultvalue
-        else:
-            return struct.unpack(self.__frm, self._defaultvalue)[0]
+        if self._wordorder == "little" and self._length > 2:
+            return struct.unpack(
+                self.__frm,
+                self._swap_word_order(self._defaultvalue),
+            )[0]
+        return struct.unpack(self.__frm, self._defaultvalue)[0]
+
+    def get_wordorder(self) -> str:
+        """
+        Gibt die wordorder für diesen IO zurück.
+
+        :return: "little", "big" or "ignored"
+        """
+        return self._wordorder or "ignored"
 
     def get_structvalue(self):
         """
@@ -1324,8 +1379,12 @@ class StructIO(IOBase):
         """
         if self._bitshift:
             return self.get_value()
-        else:
-            return struct.unpack(self.__frm, self.get_value())[0]
+        if self._wordorder == "little" and self._length > 2:
+            return struct.unpack(
+                self.__frm,
+                self._swap_word_order(self.get_value()),
+            )[0]
+        return struct.unpack(self.__frm, self.get_value())[0]
 
     def set_structvalue(self, value):
         """
@@ -1335,6 +1394,10 @@ class StructIO(IOBase):
         """
         if self._bitshift:
             self.set_value(value)
+        elif self._wordorder == "little" and self._length > 2:
+            self.set_value(
+                self._swap_word_order(struct.pack(self.__frm, value))
+            )
         else:
             self.set_value(struct.pack(self.__frm, value))
 
@@ -1342,6 +1405,7 @@ class StructIO(IOBase):
     frm = property(_get_frm)
     signed = property(_get_signed)
     value = property(get_structvalue, set_structvalue)
+    wordorder = property(get_wordorder)
 
 
 class MemIO(IOBase):

@@ -1,4 +1,8 @@
-global-exclude test/*
-global-exclude *.pyc
+recursive-include docs *
+recursive-exclude docs/_build *
 include LICENSE.txt
+include Makefile
+include MANIFEST.in
 include README.md
+include requirements.txt
+include setup.py
