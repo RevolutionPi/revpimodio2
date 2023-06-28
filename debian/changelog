@@ -1,3 +1,43 @@
+revpimodio2 (2.6.0-1+revpi10+1) buster; urgency=medium
+
+  [ Sven Sager ]
+  * Internal change RevPi*IOSelected search method
+  * Read export flag from piCtory for watchdog output
+  * replace_io accepts keyword wordorder
+  * Reorder package to src-layout.
+  * Improved device search function and create run_net_plc shortcut
+  * Code and project cleanup
+  * Update documentation
+  * Change license from LGPLv3 to LGPLv2 after approval of all contributors
+  * Replaces Master-Slave with Client-Server
+  * Reorder lines in debian files to match our package defaults
+  * Clean up files and template comments
+  * Add missing values to gbp.conf file
+  * Fix Standards-Version in control file
+  * Update debian files with our default values
+  * Add __about__.py to handle version number of project in one place
+
+  [ Nicolai Buchwitz ]
+  * docs(Connect): Fix typo in wgtoggle docstring
+
+  [ Sven Sager ]
+  * fix: Add modular design for RevPiStatus byte
+
+  [ Nicolai Buchwitz ]
+  * feat: Add support for RevPi Connect 4
+
+  [ Sven Sager ]
+  * chore: RC version 2.6.0rc6
+  * fix: Adjustment of the inheritance of devconfigure
+  * fix: Changed DevSelect from namedtuple to a class
+  * build: Add sphinx to build documentation
+  * ide: Add code inspection values to project
+  * fix: Colors of LEDs are now controlled correctly
+  * chore: Release 2.6.0
+  * fix: Add dummy file to generate docs
+
+ -- Sven Sager <s.sager@kunbus.com>  Wed, 28 Jun 2023 17:14:07 +0200
+
 revpimodio2 (2.5.10-1+revpi10) unstable; urgency=medium
 
   [ Sven Sager ]
