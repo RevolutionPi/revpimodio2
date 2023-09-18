@@ -1,4 +1,4 @@
-revpimodio2 (2.6.1-1+revpi11+1) bullseye; urgency=medium
+revpimodio2 (2.6.1-1+revpi12+1) bookworm; urgency=medium
 
   * style: With shared_procimg, save changed outputs in set instead of list
   * fix: `autorefresch` with `shared_procimg` writes all outputs automatic
