@@ -1,3 +1,29 @@
+revpimodio2 (2.7.0-1+revpi10+1) buster; urgency=medium
+
+  * fix: Insert correct LICENSE.txt file to project (LGPLv2)
+  * feat: Add new and missing ProductTypes to pictory.py module
+  * feat: Import DeviceType on module level
+  * chore: Update git ignore file
+  * build: Fix Makefile targets to match GNU coding standards
+  * style: New line length 100 characters and using black as formatter
+  * style: Format everything with black (100 characters per line)
+  * chore: Increase to RC1 of upcoming Release 2.7.0
+  * feat: Add context manager for ios
+  * test: Add tests directory to migrate unit tests to project
+  * chore: Increase to RC2 of upcoming Release 2.7.0
+  * feat: Remove deprecated parameter 'direct_output' from ModIO classes
+  * fix: Check offset values of the devices for integers
+  * fix: Check if the length of the previous IO overlaps with the new IO
+  * feat: Add support for RO device
+  * chore: Increase to RC3 of upcoming Release 2.7.0
+  * docs: Add IO context manager description
+  * feat: Add context manager for modio instance
+  * feat: Add context manager for modio instance
+  * chore: Release 2.7.0
+  * packaging: Update copyright information of project
+
+ -- Sven Sager <s.sager@kunbus.com>  Fri, 24 Nov 2023 13:25:29 +0100
+
 revpimodio2 (2.6.1-1+revpi10+1) buster; urgency=medium
 
   * style: With shared_procimg, save changed outputs in set instead of list
