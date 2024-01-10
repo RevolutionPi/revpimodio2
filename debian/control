@@ -5,7 +5,7 @@ Maintainer: KUNBUS GmbH <support@kunbus.com>
 Rules-Requires-Root: no
 Homepage: https://revpimodio.org/
 Vcs-Browser: https://gitlab.com/RevolutionPi/revpimodio2
-Vcs-Git: https://gitlab.com/RevolutionPi/revpimodio2.git -b raspios/bookworm
+Vcs-Git: https://gitlab.com/RevolutionPi/revpimodio2.git -b debian/bookworm
 Build-Depends:
   debhelper-compat (= 13),
   dh-python,
