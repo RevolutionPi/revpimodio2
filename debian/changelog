@@ -1,3 +1,9 @@
+revpimodio2 (2.8.0-1+deb13+1) trixie; urgency=medium
+
+  * Initial release for trixie
+
+ -- Sven Sager <s.sager@kunbus.com>  Fri, 05 Dec 2025 09:38:14 +0100
+
 revpimodio2 (2.8.0-1+deb12+1) bookworm; urgency=medium
 
   * chore: Increase to RC1 of upcoming Release 2.7.2

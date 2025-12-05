@@ -5,14 +5,14 @@ Maintainer: KUNBUS GmbH <support@kunbus.com>
 Rules-Requires-Root: no
 Homepage: https://revpimodio.org/
 Vcs-Browser: https://gitlab.com/RevolutionPi/revpimodio2
-Vcs-Git: https://gitlab.com/RevolutionPi/revpimodio2.git -b debian/bookworm
+Vcs-Git: https://gitlab.com/RevolutionPi/revpimodio2.git -b debian/trixie
 Build-Depends:
   debhelper-compat (= 13),
   dh-python,
   python3-all,
   python3-setuptools,
   python3-sphinx
-Standards-Version: 4.6.2
+Standards-Version: 4.7.2
 
 Package: python3-revpimodio2
 Architecture: all
